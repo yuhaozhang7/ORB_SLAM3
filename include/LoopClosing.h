@@ -193,10 +193,7 @@ protected:
     // Fix scale in the stereo/RGB-D case
     bool mbFixScale;
 
-
-    bool mnFullBAIdx;
-
-
+    int mnFullBAIdx;
 
     vector<double> vdPR_CurrentTime;
     vector<double> vdPR_MatchedTime;

@@ -150,7 +150,7 @@ public:
     void ResetActiveMap(bool bLocMap = false);
 
     float mMeanTrack;
-    bool mbInitWith3KFs;
+//    bool mbInitWith3KFs = false;
     double t0; // time-stamp of first read frame
     double t0vis; // time-stamp of first inserted keyframe
     double t0IMU; // time-stamp of IMU initialization
@@ -165,6 +165,14 @@ public:
     //cv::Mat M1r, M2r;
 
     bool mbWriteStats;
+    MapDrawer* mpMapDrawer;
+    //SLAMBENCH2 addition
+    cv::Mat getPose() const;
+    void ConfigureCamera(cv::Mat K, cv::Mat DistCoef, int fps, float DepthMapFactor, float bf, float thDepth );
+    void ConfigureAlgorithm(int maxFeatures, int pyramidLevels, float levelScale, int firstFASTThresh, int secondFASTThresh );
+    void ConfigureIMU(cv::Mat& Tbc, float freq, float Ng, float Na, float Ngw, float Naw);
+    void PrintConfig();
+    bool Relocalization();
 
 protected:
 
@@ -186,7 +194,6 @@ protected:
     bool TrackWithMotionModel();
     bool PredictStateIMU();
 
-    bool Relocalization();
 
     void UpdateLocalMap();
     void UpdateLocalPoints();
@@ -259,7 +266,6 @@ protected:
     //Drawers
     Viewer* mpViewer;
     FrameDrawer* mpFrameDrawer;
-    MapDrawer* mpMapDrawer;
     bool bStepByStep;
 
     //Atlas

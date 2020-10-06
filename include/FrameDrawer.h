@@ -50,7 +50,10 @@ public:
     cv::Mat DrawRightFrame();
 
     bool both;
-
+    //ADDED FOR SLAMBENCH
+    void setState(int state){
+        mState=state;
+    }
 protected:
 
     void DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText);

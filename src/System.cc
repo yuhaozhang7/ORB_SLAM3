@@ -63,14 +63,27 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         cout << "Monocular-Inertial" << endl;
     else if(mSensor==IMU_STEREO)
         cout << "Stereo-Inertial" << endl;
-
+    float thFarPoints = 0;
     //Check settings file
-    cv::FileStorage fsSettings(strSettingsFile.c_str(), cv::FileStorage::READ);
-    if(!fsSettings.isOpened())
-    {
-       cerr << "Failed to open settings file at: " << strSettingsFile << endl;
-       exit(-1);
+    if(strSettingsFile.empty()){
+        std::cerr << "No settings file specified\n";
+    } else {
+        cv::FileStorage fsSettings(strSettingsFile.c_str(), cv::FileStorage::READ);
+        if(!fsSettings.isOpened())
+        {
+            cerr << "Failed to open settings file at: " << strSettingsFile << endl;
+            exit(-1);
+        }
+        thFarPoints = fsSettings["thFarPoints"];
     }
+//
+//    //Check settings file
+//    cv::FileStorage fsSettings(strSettingsFile.c_str(), cv::FileStorage::READ);
+//    if(!fsSettings.isOpened())
+//    {
+//       cerr << "Failed to open settings file at: " << strSettingsFile << endl;
+//       exit(-1);
+//    }
 
     bool loadedAtlas = false;
 
@@ -180,7 +193,8 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     mpLocalMapper = new LocalMapping(this, mpAtlas, mSensor==MONOCULAR || mSensor==IMU_MONOCULAR, mSensor==IMU_MONOCULAR || mSensor==IMU_STEREO, strSequence);
     mptLocalMapping = new thread(&ORB_SLAM3::LocalMapping::Run,mpLocalMapper);
     mpLocalMapper->mInitFr = initFr;
-    mpLocalMapper->mThFarPoints = fsSettings["thFarPoints"];
+//    mpLocalMapper->mThFarPoints = fsSettings["thFarPoints"];
+    mpLocalMapper->mThFarPoints = thFarPoints;
     if(mpLocalMapper->mThFarPoints!=0)
     {
         cout << "Discard points further than " << mpLocalMapper->mThFarPoints << " m from current camera" << endl;
@@ -1063,6 +1077,10 @@ string System::CalculateCheckSum(string filename, int type)
 
     return checksum;
 }*/
+bool System::Relocalize()
+{
+    return mpTracker->Relocalization();
+}
 
 } //namespace ORB_SLAM
 

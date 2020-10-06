@@ -47,11 +47,13 @@ namespace ORB_SLAM3
 
 Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Atlas *pAtlas, KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor, const string &_nameSeq):
     mState(NO_IMAGES_YET), mSensor(sensor), mTrackedFr(0), mbStep(false),
-    mbOnlyTracking(false), mbMapUpdated(false), mbVO(false), mpORBVocabulary(pVoc), mpKeyFrameDB(pKFDB),
-    mpInitializer(static_cast<Initializer*>(NULL)), mpSystem(pSys), mpViewer(NULL),
-    mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpAtlas(pAtlas), mnLastRelocFrameId(0), time_recently_lost(5.0),
-    mnInitialFrameId(0), mbCreatedMap(false), mnFirstFrameId(0), mpCamera2(nullptr)
+    mbOnlyTracking(false), mbMapUpdated(false), mbVO(false), mpMapDrawer(pMapDrawer),mpORBVocabulary(pVoc), mpKeyFrameDB(pKFDB),
+    mpInitializer(static_cast<Initializer*>(nullptr)), mpSystem(pSys), mpViewer(nullptr), mpFrameDrawer(pFrameDrawer),
+    mpAtlas(pAtlas), mnLastRelocFrameId(0), time_recently_lost(5.0),
+    mnFirstFrameId(0), mnInitialFrameId(0), mbCreatedMap(false), mpCamera2(nullptr)
 {
+    if(strSettingPath.empty())
+        return;
     // Load camera parameters from settings file
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
 
@@ -82,9 +84,6 @@ Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer,
 
         mnFramesToResetIMU = mMaxFrames;
     }
-
-    mbInitWith3KFs = false;
-
 
     //Rectification parameters
     /*mbNeedRectify = false;
@@ -2458,7 +2457,7 @@ bool Tracking::TrackWithMotionModel()
     // Project points seen in previous frame
     int th;
 
-    if(mSensor==System::STEREO)
+    if(mSensor==System::STEREO )
         th=7;
     else
         th=15;
@@ -2819,8 +2818,8 @@ void Tracking::CreateNewKeyFrame()
         // We create all those MapPoints whose depth < mThDepth.
         // If there are less than 100 close points we create the 100 closest.
         int maxPoint = 100;
-        if(mSensor == System::IMU_STEREO)
-            maxPoint = 100;
+//        if(mSensor == System::IMU_STEREO)
+//            maxPoint = 100;
 
         vector<pair<float,int> > vDepthIdx;
         int N = (mCurrentFrame.Nleft != -1) ? mCurrentFrame.Nleft : mCurrentFrame.N;
@@ -3152,7 +3151,7 @@ void Tracking::UpdateLocalKeyFrames()
     }
 
     // Add 10 last temporal KFs (mainly for IMU)
-    if((mSensor == System::IMU_MONOCULAR || mSensor == System::IMU_STEREO) &&mvpLocalKeyFrames.size()<80)
+    if((mSensor == System::IMU_MONOCULAR || mSensor == System::IMU_STEREO) && mvpLocalKeyFrames.size()<80)
     {
         //cout << "CurrentKF: " << mCurrentFrame.mnId << endl;
         KeyFrame* tempKeyFrame = mCurrentFrame.mpLastKeyFrame;
@@ -3898,4 +3897,92 @@ int Tracking::GetMatchesInliers()
     return mnMatchesInliers;
 }
 
+cv::Mat Tracking::getPose() const {
+    cv::Mat pose=cv::Mat::zeros(4,4, CV_32F);
+    mpMapDrawer->GetCurrentCameraMatrix(pose);
+    return(pose.clone());
+}
+
+void Tracking::ConfigureCamera(cv::Mat K, cv::Mat DistCoef, int fps, float DepthMapFactor, float bf, float thDepth ) {
+    mbf = bf;
+    K.copyTo(mK);
+    DistCoef.copyTo(mDistCoef);
+    mMaxFrames = fps;
+    if(mSensor==System::STEREO || mSensor==System::IMU_STEREO || mSensor==System::RGBD)
+    {
+        mThDepth = bf*(float)thDepth/K.at<float>(0,0);
+    }
+    if(mSensor==System::RGBD)
+    {
+        mDepthMapFactor = DepthMapFactor;
+    }
+    vector<float> vCamCalib{K.at<float>(0,0),K.at<float>(1,1),K.at<float>(0,2),K.at<float>(1,2)};
+    mpCamera = new Pinhole(vCamCalib);
+    mpAtlas->AddCamera(mpCamera);
+}
+void Tracking::ConfigureAlgorithm(int maxFeatures, int pyramidLevels, float levelScale, int firstFASTThresh, int secondFASTThresh ) {
+
+    if(mpORBextractorLeft)
+        delete mpORBextractorLeft;
+    mpORBextractorLeft = new ORBextractor(maxFeatures,levelScale,pyramidLevels,firstFASTThresh,secondFASTThresh);
+
+    if(mpORBextractorRight)
+        delete mpORBextractorRight;
+    mpORBextractorRight = new ORBextractor(maxFeatures,levelScale,pyramidLevels,firstFASTThresh,secondFASTThresh);
+
+    if(mpIniORBextractor)
+        delete mpIniORBextractor;
+
+    mpIniORBextractor = new ORBextractor(5*maxFeatures,levelScale,pyramidLevels,firstFASTThresh,secondFASTThresh);
+
+    if(mSensor==System::IMU_MONOCULAR || mSensor==System::IMU_STEREO)
+        mnFramesToResetIMU = mMaxFrames;
+}
+
+void Tracking::ConfigureIMU(cv::Mat& Tbc, float freq, float Ng, float Na, float Ngw, float Naw)
+{
+
+    cout << "Left camera to Imu Transform (Tbc): " << endl << Tbc << endl;
+
+    const float sf = sqrt(freq);
+    cout << endl;
+    cout << "IMU frequency: " << freq << " Hz" << endl;
+    cout << "IMU gyro noise: " << Ng << " rad/s/sqrt(Hz)" << endl;
+    cout << "IMU gyro walk: " << Ngw << " rad/s^2/sqrt(Hz)" << endl;
+    cout << "IMU accelerometer noise: " << Na << " m/s^2/sqrt(Hz)" << endl;
+    cout << "IMU accelerometer walk: " << Naw << " m/s^3/sqrt(Hz)" << endl;
+
+    mpImuCalib = new IMU::Calib(Tbc,Ng*sf,Na*sf,Ngw/sf,Naw/sf);
+    mpImuPreintegratedFromLastKF = new IMU::Preintegrated(IMU::Bias(),*mpImuCalib);
+
+}
+
+void Tracking::PrintConfig() {
+    cout << endl << "Camera Parameters: " << endl;
+    cout << "- fx: " << mK.at<float>(0,0)  << endl;
+    cout << "- fy: " << mK.at<float>(1,1) << endl;
+    cout << "- cx: " << mK.at<float>(0,2) << endl;
+    cout << "- cy: " << mK.at<float>(1,2) << endl;
+    cout << "- k1: " << mDistCoef.at<float>(0) << endl;
+    cout << "- k2: " << mDistCoef.at<float>(1) << endl;
+    if(mDistCoef.rows==5)
+        cout << "- k3: " << mDistCoef.at<float>(4) << endl;
+    cout << "- p1: " << mDistCoef.at<float>(2) << endl;
+    cout << "- p2: " << mDistCoef.at<float>(3) << endl;
+    cout << "- fps: " << mMaxFrames << endl;
+    cout << "- bf: " << mbf << endl;
+
+    cout << endl  << "ORB Extractor Parameters: " << endl;
+//    cout << "- Number of Features: " << nFeatures << endl;
+//    cout << "- Scale Levels: " << nLevels << endl;
+//    cout << "- Scale Factor: " << fScaleFactor << endl;
+//    cout << "- Initial Fast Threshold: " << fIniThFAST << endl;
+//    cout << "- Minimum Fast Threshold: " << mMinThFAST << endl;
+
+    if(mSensor==System::STEREO || mSensor==System::IMU_STEREO || mSensor==System::RGBD)
+    {
+        cout << endl << "Depth Threshold (Close/Far Points): " << mThDepth << endl;
+    }
+
+}
 } //namespace ORB_SLAM

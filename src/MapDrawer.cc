@@ -29,20 +29,25 @@ namespace ORB_SLAM3
 
 MapDrawer::MapDrawer(Atlas* pAtlas, const string &strSettingPath):mpAtlas(pAtlas)
 {
-    cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
+    if(strSettingPath.empty()) {
+        mKeyFrameSize=0.05;
+        mKeyFrameLineWidth=1;
+        mGraphLineWidth=0.9;
+        mPointSize=2;
+        mCameraSize=0.08;
+        mCameraLineWidth=3;
+    }
+    else {
+        cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
 
-    bool is_correct = ParseViewerParamFile(fSettings);
+        bool is_correct = ParseViewerParamFile(fSettings);
 
-    if(!is_correct)
-    {
-        std::cerr << "**ERROR in the config file, the format is not correct**" << std::endl;
-        try
-        {
-            throw -1;
-        }
-        catch(exception &e)
-        {
-
+        if (!is_correct) {
+            std::cerr << "**ERROR in the config file, the format is not correct**" << std::endl;
+            try {
+                throw -1;
+            } catch (exception &e) {
+            }
         }
     }
 }
@@ -541,4 +546,41 @@ void MapDrawer::GetCurrentOpenGLCameraMatrix(pangolin::OpenGlMatrix &M, pangolin
 
 }
 
+void MapDrawer::GetCurrentCameraMatrix(cv::Mat &M)
+{
+    if(!mCameraPose.empty())
+    {
+        cv::Mat Rwc(3,3,CV_32F);
+        cv::Mat twc(3,1,CV_32F);
+        {
+            unique_lock<mutex> lock(mMutexCamera);
+            Rwc = mCameraPose.rowRange(0,3).colRange(0,3).t();
+            twc = -Rwc*mCameraPose.rowRange(0,3).col(3);
+        }
+
+        M.at<float>(0,0) = Rwc.at<float>(0,0);
+        M.at<float>(1,0) = Rwc.at<float>(1,0);
+        M.at<float>(2,0) = Rwc.at<float>(2,0);
+        M.at<float>(3,0)  = 0.0;
+
+        M.at<float>(0,1) = Rwc.at<float>(0,1);
+        M.at<float>(1,1) = Rwc.at<float>(1,1);
+        M.at<float>(2,1) = Rwc.at<float>(2,1);
+        M.at<float>(3,1)  = 0.0;
+
+        M.at<float>(0,2) = Rwc.at<float>(0,2);
+        M.at<float>(1,2) = Rwc.at<float>(1,2);
+        M.at<float>(2,2) = Rwc.at<float>(2,2);
+        M.at<float>(3,2)  = 0.0;
+
+        M.at<float>(0,3) = twc.at<float>(0);
+        M.at<float>(1,3) = twc.at<float>(1);
+        M.at<float>(2,3) = twc.at<float>(2);
+        M.at<float>(3,3)  = 1.0;
+    }
+    else {
+        cv::Mat empty=cv::Mat::zeros(4,4,CV_32F);
+        empty.copyTo(M);
+    }
+}
 } //namespace ORB_SLAM

@@ -176,10 +176,10 @@ public:
     bool isFinished();
 
     void ChangeDataset();
+    bool Relocalize();
 
     //void SaveAtlas(int type);
 
-private:
 
     //bool LoadAtlas(string filename, int type);
 
