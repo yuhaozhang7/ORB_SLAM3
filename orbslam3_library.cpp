@@ -587,19 +587,29 @@ bool sb_process_once (SLAMBenchLibraryHelper *slam_settings)  {
         return false;
 
     SLAM->mpFrameDrawer->setState(SLAM->mpTracker->mLastProcessedState);
-//    if(!sb_get_tracked())
-//        SLAM->Relocalize();
+    if(!sb_get_tracked())
+        SLAM->Relocalize();
     return true;
 }
 
+// Report last valid pose if tracking is lost
+Eigen::Matrix4f last_valid_pose;
 bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *latest_output) {
     (void)lib;
     auto ts = *latest_output;
     if(pose_output->IsActive()) {
         // Get the current pose as an eigen matrix
-        pose=SLAM->mpTracker->getPose();
         Eigen::Matrix4f matrix;
-        sb_get_pose(&matrix);
+        if(sb_get_tracked())
+        {
+            pose=SLAM->mpTracker->getPose();
+            sb_get_pose(&matrix);
+            last_valid_pose = matrix;
+        }
+        else
+        {
+            matrix = last_valid_pose;
+        }
         std::lock_guard<FastLock> lock(lib->GetOutputManager().GetLock());
         pose_output->AddPoint(ts, new slambench::values::PoseValue(matrix));
     }
@@ -638,7 +648,8 @@ bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *
 
 
 bool sb_clean_slam_system() {
-    SLAM->Shutdown();
+    delete SLAM;
+//    SLAM->Shutdown();
     return true;
 }
 
