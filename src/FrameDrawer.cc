@@ -36,7 +36,6 @@ FrameDrawer::FrameDrawer(Atlas* pAtlas):both(false),mpAtlas(pAtlas)
 
 cv::Mat FrameDrawer::DrawFrame(bool bOldFeatures)
 {
-    // std::cout << "0" << std::endl;
     cv::Mat im;
     vector<cv::KeyPoint> vIniKeys; // Initialization: KeyPoints in reference frame
     vector<int> vMatches; // Initialization: correspondeces with reference keypoints
@@ -141,126 +140,48 @@ cv::Mat FrameDrawer::DrawFrame(bool bOldFeatures)
                     mnTrackedVO++;
                 }
             }
-            /*else
-            {
-                cv::circle(im,vCurrentKeys[i].pt,2,cv::Scalar(0,0,255),-1);
-            }*/
         }
-        // std::cout << "2.3" << std::endl;
     }
-    else if(state==Tracking::OK && !bOldFeatures)
-    {
-        mnTracked=0;
+    else if(state==Tracking::OK && !bOldFeatures) {
+        mnTracked = 0;
         int nTracked2 = 0;
-        mnTrackedVO=0;
+        mnTrackedVO = 0;
         int n = vCurrentKeys.size();
 
-        // cout << "----------------------" << endl;
-        // cout << "Number of matches in old method: " << n << endl;
-
-        for(int i=0; i < n; ++i)
-        {
-
-            // This is a match to a MapPoint in the map
-            if(vbMap[i])
-            {
+        for (int i = 0; i < n; ++i) {
+            if (vbMap[i]) {
                 mnTracked++;
             }
         }
 
         n = mProjectPoints.size();
-        //cout << "Number of projected points: " << n << endl;
         n = mMatchedInImage.size();
-        //cout << "Number of matched points: " << n << endl;
         map<long unsigned int, cv::Point2f>::iterator it_match = mMatchedInImage.begin();
-        while(it_match != mMatchedInImage.end())
-        {
+        while (it_match != mMatchedInImage.end()) {
             long unsigned int mp_id = it_match->first;
             cv::Point2f p_image = it_match->second;
 
-            if(mProjectPoints.find(mp_id) != mProjectPoints.end())
-            {
+            if (mProjectPoints.find(mp_id) != mProjectPoints.end()) {
                 cv::Point2f p_proj = mMatchedInImage[mp_id];
                 cv::line(im, p_proj, p_image, cv::Scalar(0, 255, 0), 2);
                 nTracked2++;
+            } else {
+                cv::circle(im, p_image, 2, cv::Scalar(0, 0, 255), -1);
             }
-            else
-            {
-                cv::circle(im,p_image,2,cv::Scalar(0,0,255),-1);
-            }
-
 
             it_match++;
-            //it_proj = mProjectPoints.erase(it_proj);
         }
-        //for(int i=0; i < n; ++i)
-        //{
-            /*if(!vpMatchedMPs[i])
-                continue;*/
-
-            //cv::circle(im,vProjectPoints[i],2,cv::Scalar(255,0,0),-1);
-            /*cv::Point2f point3d_proy;
-            float u, v;
-            bool bIsInImage = currentFrame.ProjectPointDistort(vpMatchedMPs[i] , point3d_proy, u, v);
-            if(bIsInImage)
-            {
-                //cout << "-Point is out of the image" << point3d_proy.x << ", " << point3d_proy.y << endl;
-                cv::circle(im,vMatchesKeys[i].pt,2,cv::Scalar(255,0,0),-1);
-                continue;
-            }
-
-            //cout << "+Point CV " << point3d_proy.x << ", " << point3d_proy.y << endl;
-            //cout << "+Point coord " << u << ", " << v << endl;
-            cv::Point2f point_im = vMatchesKeys[i].pt;
-
-            cv::line(im,cv::Point2f(u, v), point_im,cv::Scalar(0, 255, 0), 1);*/
-
-        //}
-
-        /*cout << "Number of tracker in old method: " << mnTracked << endl;
-        cout << "Number of tracker in new method: " << nTracked2 << endl;*/
-
         n = vOutlierKeys.size();
-        //cout << "Number of outliers: " << n << endl;
-        for(int i=0; i < n; ++i)
-        {
+        for (int i = 0; i < n; ++i) {
             cv::Point2f point3d_proy;
             float u, v;
-            currentFrame.ProjectPointDistort(vpOutlierMPs[i] , point3d_proy, u, v);
+            currentFrame.ProjectPointDistort(vpOutlierMPs[i], point3d_proy, u, v);
 
             cv::Point2f point_im = vOutlierKeys[i].pt;
 
-            cv::line(im,cv::Point2f(u, v), point_im,cv::Scalar(0, 0, 255), 1);
+            cv::line(im, cv::Point2f(u, v), point_im, cv::Scalar(0, 0, 255), 1);
         }
-
-//        for(int i=0;i<n;i++)
-//        {
-//            if(vbVO[i] || vbMap[i])
-//            {
-//                cv::Point2f pt1,pt2;
-//                pt1.x=vCurrentKeys[i].pt.x-r;
-//                pt1.y=vCurrentKeys[i].pt.y-r;
-//                pt2.x=vCurrentKeys[i].pt.x+r;
-//                pt2.y=vCurrentKeys[i].pt.y+r;
-
-//                // This is a match to a MapPoint in the map
-//                if(vbMap[i])
-//                {
-//                    cv::rectangle(im,pt1,pt2,cv::Scalar(0,255,0));
-//                    cv::circle(im,vCurrentKeys[i].pt,2,cv::Scalar(0,255,0),-1);
-//                    mnTracked++;
-//                }
-//                else // This is match to a "visual odometry" MapPoint created in the last frame
-//                {
-//                    cv::rectangle(im,pt1,pt2,cv::Scalar(255,0,0));
-//                    cv::circle(im,vCurrentKeys[i].pt,2,cv::Scalar(255,0,0),-1);
-//                    mnTrackedVO++;
-//                }
-//            }
-//        }
-
     }
-    // std::cout << "3" << std::endl;
 
     cv::Mat imWithInfo;
     DrawTextInfo(im,state, imWithInfo);
@@ -277,7 +198,6 @@ cv::Mat FrameDrawer::DrawRightFrame()
     vector<bool> vbVO, vbMap; // Tracked MapPoints in current frame
     int state; // Tracking state
 
-    //Copy variables within scoped mutex
     {
         unique_lock<mutex> lock(mMutex);
         state=mState;

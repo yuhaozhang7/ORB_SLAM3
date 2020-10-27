@@ -168,7 +168,8 @@ public:
     MapDrawer* mpMapDrawer;
     //SLAMBENCH2 addition
     cv::Mat getPose() const;
-    void ConfigureCamera(cv::Mat K, cv::Mat DistCoef, int fps, float DepthMapFactor, float bf, float thDepth );
+
+    void ConfigureCamera(cv::Mat K, cv::Mat K_r, cv::Mat DistCoef, int fps, float DepthMapFactor, float bf, float thDepth );
     void ConfigureAlgorithm(int maxFeatures, int pyramidLevels, float levelScale, int firstFASTThresh, int secondFASTThresh );
     void ConfigureIMU(cv::Mat& Tbc, float freq, float Ng, float Na, float Ngw, float Naw);
     void PrintConfig();

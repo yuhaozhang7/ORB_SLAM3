@@ -21,7 +21,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <timings.h>
-
+#include <chrono>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <csignal>
@@ -98,9 +98,14 @@ static const int default_second_fast_threshold=7;
 static int camera_fps;
 static const int default_camera_fps=40;
 
+static int frame_no = 0;
+static int start_frame;
+static const int default_start_frame=0;
+
 static float depth_threshold;
 static const float default_depth_threshold=40;
 
+enum copyFrom {SB_TO_CV, CV_TO_SB};
 bool sb_get_tracked()  {
     return (SLAM->GetTrackingState() == ORB_SLAM3::Tracking::OK);
 }
@@ -111,18 +116,10 @@ bool sb_get_initialized()  {
              SLAM->GetTrackingState() == ORB_SLAM3::Tracking::RECENTLY_LOST);
 }
 
-bool sb_get_pose(Eigen::Matrix4f *mat)  {
-    for(int j=0; j<4;j++) {
-        for(int i=0; i<4;i++) {
-            (*mat)(j,i)= pose.at<float>(j,i);
-        }
-    }
-    return true;
-}
 template<typename TYPE>
 void copyIntrinsics(slambench::io::CameraSensor* sensor, cv::Mat& camera_parameters)
 {
-    static_assert(std::is_same<float,TYPE>() || std::is_same<double,TYPE>(), "Use double for CV_64F and float for CV_32F!");
+    static_assert(std::is_same<TYPE, float>() || std::is_same<TYPE, double>(), "Use double for CV_64F and float for CV_32F!");
 
     camera_parameters.at<TYPE>(0,0) = sensor->Intrinsics[0]*sensor->Width;
     camera_parameters.at<TYPE>(1,1) = sensor->Intrinsics[1]*sensor->Height;
@@ -133,7 +130,7 @@ void copyIntrinsics(slambench::io::CameraSensor* sensor, cv::Mat& camera_paramet
 template<typename TYPE>
 void copyDistortion(slambench::io::CameraSensor* sensor, cv::Mat& camera_distortion)
 {
-    static_assert(std::is_same<float,TYPE>() || std::is_same<double,TYPE>(), "Use double for CV_64F and float for CV_32F!");
+    static_assert(std::is_same<TYPE, float>() || std::is_same<TYPE, double>(), "Use double for CV_64F and float for CV_32F!");
 
     camera_distortion.at<TYPE>(0) = sensor->Distortion[0];
     camera_distortion.at<TYPE>(1) = sensor->Distortion[1];
@@ -143,19 +140,28 @@ void copyDistortion(slambench::io::CameraSensor* sensor, cv::Mat& camera_distort
 }
 
 template<typename TYPE>
-void copyPose(slambench::io::CameraSensor* sensor, cv::Mat& sensor_pose)
+void copyPose(Eigen::Matrix<TYPE,4,4> &sb_pose, cv::Mat& sensor_pose, copyFrom copy_direction = copyFrom::CV_TO_SB)
 {
-    static_assert(std::is_same<float,TYPE>() || std::is_same<double,TYPE>(), "Use double for CV_64F and float for CV_32F!");
+    static_assert(std::is_same<TYPE, float>() || std::is_same<TYPE, double>(), "Use double for CV_64F and float for CV_32F!");
+    if(std::is_same<TYPE, float>())
+        assert(sensor_pose.type() == CV_32F && "Use float for CV_32F!");
+    else if(std::is_same<TYPE, double>())
+        assert(sensor_pose.type() == CV_64F && "Use double for CV_64F!");
 
-    for (int r = 0; r < 4; r++)
-        for (int c = 0; c < 4; c++)
-            sensor_pose.at<TYPE>(r,c) = sensor->Pose(r,c);
+    for(size_t i = 0; i < 4; i++) {
+        for(size_t j = 0; j < 4; j++) {
+            if(copy_direction == copyFrom::CV_TO_SB)
+                sb_pose(i,j) = sensor_pose.at<TYPE>(i,j);
+            else
+                sensor_pose.at<TYPE>(i,j) = sb_pose(i,j);
+        }
+    }
+
 }
 
 // ===========================================================
 // PERSONALIZED DATATYPE FOR ORBSLAM PARAMETERS
 // ===========================================================
-//TODO: add IMU
 template<> inline const std::string TypedParameter<orbslam_input_mode>::getValue(const void * ptr) const {
     switch (*((orbslam_input_mode*) ptr))  {
         case orbslam_input_mode::mono : return "mono";
@@ -219,6 +225,7 @@ bool sb_new_slam_configuration(SLAMBenchLibraryHelper * slam_settings) {
     // camera parameters
     slam_settings->addParameter(TypedParameter<int>("fps", "camera-fps",     "Camera frame rate",    &camera_fps,  &default_camera_fps));
     slam_settings->addParameter(TypedParameter<float>("dt", "depth-threshold",     "Depth threshold (close/far points)",    &depth_threshold,  &default_depth_threshold));
+    slam_settings->addParameter(TypedParameter<int>("", "start-frame", "first frame to compute", &start_frame, &default_start_frame));
 
     return true;
 }
@@ -236,7 +243,7 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
     IMU_sensor = (slambench::io::IMUSensor*)slam_settings->get_sensors().GetSensor(slambench::io::IMUSensor::kIMUType);
     auto grey_sensors = sensor_finder.Find(slam_settings->get_sensors(), {{"camera_type", "grey"}});
 
-    if(grey_sensors.size() ==  2) {
+    if(grey_sensors.size() == 2) {
         grey_sensor_one = grey_sensors.at(0);
         grey_sensor_two = grey_sensors.at(1);
     }
@@ -292,7 +299,7 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         cv::Mat camera_parameters = cv::Mat::eye(3,3,CV_32F);
         copyIntrinsics<float>(rgb_sensor, camera_parameters);
 
-        cv::Mat camera_distortion(5,1,CV_32F);
+        cv::Mat camera_distortion(1,5,CV_32F);
         copyDistortion<float>(rgb_sensor, camera_distortion);
 
         imRGB = new cv::Mat (rgb_sensor->Height, rgb_sensor->Width,CV_8UC3);
@@ -303,7 +310,7 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         SLAM = new ORB_SLAM3::System(vocabulary_file,settings_file,ORB_SLAM3::System::RGBD,false);
 
         if(settings_file.empty()) {
-            SLAM->mpTracker->ConfigureCamera(camera_parameters, camera_distortion, camera_fps, DepthMapFactor, 40, depth_threshold);
+            SLAM->mpTracker->ConfigureCamera(camera_parameters,cv::Mat(),  camera_distortion, camera_fps, DepthMapFactor, 40, depth_threshold);
             SLAM->mpTracker->ConfigureAlgorithm(max_features, pyramid_levels, scale_factor, initial_fast_threshold, second_fast_threshold);
         }
 
@@ -325,7 +332,7 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         }
 
         cv::Mat camera_parameters = cv::Mat::eye(3,3,CV_32F);
-        cv::Mat camera_distortion(5,1,CV_32F);
+        cv::Mat camera_distortion(1,5, CV_32F);
 
         if (rgb_sensor) {
             copyIntrinsics<float>(rgb_sensor, camera_parameters);
@@ -350,15 +357,15 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         }
 
         if(settings_file.empty()) {
-            SLAM->mpTracker->ConfigureCamera(camera_parameters, camera_distortion, camera_fps, 1, 40, depth_threshold);
+            SLAM->mpTracker->ConfigureCamera(camera_parameters, cv::Mat(), camera_distortion, camera_fps, 1, 40, depth_threshold);
             SLAM->mpTracker->ConfigureAlgorithm(max_features, pyramid_levels, scale_factor, initial_fast_threshold, second_fast_threshold);
             if(input_mode == orbslam_input_mode::monoimu)
             {
                 cv::Mat Tbc = cv::Mat::zeros(4,4,CV_32F);
                 if(rgb_sensor)
-                    copyPose<float>(rgb_sensor, Tbc);
+                    copyPose<float>(rgb_sensor->Pose, Tbc, copyFrom::SB_TO_CV);
                 else
-                    copyPose<float>(grey_sensor_one, Tbc);
+                    copyPose<float>(rgb_sensor->Pose, Tbc, copyFrom::SB_TO_CV);
 
                 SLAM->mpTracker->ConfigureIMU(Tbc,
                                               IMU_sensor->Rate,
@@ -375,6 +382,10 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
             std::cerr << "Invalid sensors found, Grey Stereo not found." << std::endl;
             return false;
         }
+        if(grey_sensor_one->DistortionType != grey_sensor_two->DistortionType) {
+            std::cerr << "Stereo cameras with different distortion types not supported!" << std::endl;
+            return false;
+        }
 
         cv::Mat K_l, K_r, D_l, D_r;
 
@@ -384,10 +395,13 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         K_r = cv::Mat::eye(3, 3,CV_64F);
         copyIntrinsics<double>(grey_sensor_two, K_r);
 
-        D_l = cv::Mat::zeros(1, 5,CV_64F);
+        int num_dist_params = 4; // Equidistant or Kannala-Brandt
+        if(grey_sensor_one->DistortionType == slambench::io::CameraSensor::RadialTangential)
+            num_dist_params = 5;
+        D_l = cv::Mat::zeros(1, num_dist_params,CV_64F);
         copyDistortion<double>(grey_sensor_one, D_l);
 
-        D_r = cv::Mat::zeros(1, 5,CV_64F);
+        D_r = cv::Mat::zeros(1, num_dist_params,CV_64F);
         copyDistortion<double>(grey_sensor_two, D_r);
 
         std::vector<cv::Mat> vK, vD, vTBS;
@@ -396,12 +410,21 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         // here we read T_BS, K, D and images size for each camera
         cv::Mat T_BS_l(4,4, CV_64F);
         cv::Mat T_BS_r(4,4, CV_64F);
-        copyPose<double>(grey_sensor_one, T_BS_l);
-        copyPose<double>(grey_sensor_two, T_BS_r);
+        Eigen::Matrix4d gray_pose_one = grey_sensor_one->Pose.cast<double>();
+        Eigen::Matrix4d gray_pose_two = grey_sensor_two->Pose.cast<double>();
+        copyPose<double>(gray_pose_one, T_BS_l, copyFrom::SB_TO_CV);
+        copyPose<double>(gray_pose_two, T_BS_r, copyFrom::SB_TO_CV);
 
         cv::Mat P_l, P_r, R_l, R_r;
         cv::Mat R1,R2,P1,P2,Q;
-        cv::Mat Tr = (T_BS_r).inv() * (T_BS_l);
+        cv::Mat Tr(4,4, CV_64F);
+        Tr = T_BS_r.inv() * T_BS_l;
+        Eigen::Matrix4d camtransform;
+        camtransform << 0.9998053017199788, 0.011197738450911484, 0.01624713224548414, -0.07961594300469246,
+                       -0.011147758116324, 0.9999328574031386, -0.0031635699090552883, 0.0007443452072558462,
+                        -0.016281466199246444, 0.00298183486707869, 0.9998630018753686, 0.0004425529195268342,
+                        0.0, 0.0, 0.0, 1.0;
+        copyPose<double>(camtransform, Tr, copyFrom::SB_TO_CV);
         cv::Mat R, T;
 
         Tr.colRange(0,3).rowRange(0,3).copyTo(R);
@@ -413,7 +436,10 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         int cols_r = grey_sensor_two->Width;
 
         // note that order of cameras matter (left camera) should be the first one.
-        cv::stereoRectify(K_l, D_l, K_r, D_r, cv::Size(cols_l,rows_l), R, T, R_l, R_r, P_l, P_r, Q, CV_CALIB_ZERO_DISPARITY,0);
+        if(grey_sensor_one->DistortionType == slambench::io::CameraSensor::RadialTangential)
+            cv::stereoRectify(K_l, D_l, K_r, D_r, cv::Size(cols_l,rows_l), R, T, R_l, R_r, P_l, P_r, Q, CV_CALIB_ZERO_DISPARITY,0);
+        else
+            cv::fisheye::stereoRectify(K_l, D_l, K_r, D_r, cv::Size(cols_l,rows_l), R, T, R_l, R_r, P_l, P_r, Q, CV_CALIB_ZERO_DISPARITY);
 
         double bf = std::abs(P_r.at<double>(0,3) - P_l.at<double>(0,3));
 
@@ -442,12 +468,12 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         }
 
         if(settings_file.empty()) {
-            SLAM->mpTracker->ConfigureCamera(K, DistCoef, camera_fps, 1, bf , depth_threshold);
+            SLAM->mpTracker->ConfigureCamera(K, cv::Mat(), DistCoef, camera_fps, 1, bf , depth_threshold);
             SLAM->mpTracker->ConfigureAlgorithm(max_features,pyramid_levels,scale_factor,initial_fast_threshold,second_fast_threshold);
             if(input_mode == orbslam_input_mode::stereoimu)
             {
                 cv::Mat Tbc = cv::Mat::zeros(4,4,CV_32F);
-                copyPose<float>(grey_sensor_one, Tbc);
+                copyPose<float>(grey_sensor_one->Pose, Tbc);
 
                 SLAM->mpTracker->ConfigureIMU(Tbc,
                                               IMU_sensor->Rate,
@@ -461,12 +487,18 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         if(K_l.empty() || K_r.empty() || P_l.empty() || P_r.empty() || R_l.empty() || R_r.empty() || D_l.empty() || D_r.empty() ||
            rows_l==0 || rows_r==0 || cols_l==0 || cols_r==0)
         {
-            cerr << "ERROR: Calibration parameters to rectify stereo are missing!" << endl;
+            std::cerr << "ERROR: Calibration parameters to rectify stereo are missing!" << std::endl;
             exit(1);
         }
 
-        cv::initUndistortRectifyMap(K_l,D_l,R_l,P_l.rowRange(0,3).colRange(0,3),cv::Size(cols_l,rows_l),CV_32F,M1l,M2l);
-        cv::initUndistortRectifyMap(K_r,D_r,R_r,P_r.rowRange(0,3).colRange(0,3),cv::Size(cols_r,rows_r),CV_32F,M1r,M2r);
+        if(grey_sensor_one->DistortionType == slambench::io::CameraSensor::RadialTangential) {
+            cv::initUndistortRectifyMap(K_l,D_l,R_l,P_l.rowRange(0,3).colRange(0,3),cv::Size(cols_l,rows_l),CV_32F,M1l,M2l);
+            cv::initUndistortRectifyMap(K_r,D_r,R_r,P_r.rowRange(0,3).colRange(0,3),cv::Size(cols_r,rows_r),CV_32F,M1r,M2r);
+        }
+        else {
+            cv::fisheye::initUndistortRectifyMap(K_l,D_l,R_l,P_l.rowRange(0,3).colRange(0,3),cv::Size(cols_l,rows_l),CV_32F,M1l,M2l);
+            cv::fisheye::initUndistortRectifyMap(K_r,D_r,R_r,P_r.rowRange(0,3).colRange(0,3),cv::Size(cols_r,rows_r),CV_32F,M1r,M2r);
+        }
 
     }  else if (input_mode == orbslam_input_mode::automatic) {
         std::cout << "No valid sensor found." << std::endl;
@@ -515,14 +547,15 @@ bool performTracking()
         std::cout << "Unsupported case." << std::endl;
         return false;
     }
-
+    frame_no++;
     imupoints.clear();
     imu_ready = false, depth_ready = false, rgb_ready = false, grey_one_ready = false, grey_two_ready = false;
     return true;
 }
-
+bool is_cam_frame;
 bool sb_update_frame (SLAMBenchLibraryHelper *slam_settings , slambench::io::SLAMFrame* s) {
     assert(s != nullptr);
+    is_cam_frame = true;
     if(s->FrameSensor->GetType() == slambench::io::GroundTruthSensor::kGroundTruthTrajectoryType and !sb_get_tracked()) {
         cv::Mat matrix(4,4,CV_32F);
         memcpy(matrix.data, s->GetData(), s->GetSize());
@@ -532,23 +565,23 @@ bool sb_update_frame (SLAMBenchLibraryHelper *slam_settings , slambench::io::SLA
         //  Prevent last_frame_timestamp to be updated with IMU sensor timestamp
     else if(s->FrameSensor == depth_sensor and imD) {
         memcpy(imD->data, s->GetData(), s->GetSize());
-        depth_ready = true;
         last_frame_timestamp = s->Timestamp;
+        depth_ready = true;
         s->FreeData();
     } else if(s->FrameSensor == rgb_sensor and imRGB) {
         memcpy(imRGB->data, s->GetData(), s->GetSize());
-        rgb_ready = true;
         last_frame_timestamp = s->Timestamp;
+        rgb_ready = true;
         s->FreeData();
     } else if(s->FrameSensor == grey_sensor_one and img_one) {
         memcpy(img_one->data, s->GetData(), s->GetSize());
-        grey_one_ready = true;
         last_frame_timestamp = s->Timestamp;
+        grey_one_ready = true;
         s->FreeData();
     } else if(s->FrameSensor == grey_sensor_two and img_two) {
         memcpy(img_two->data, s->GetData(), s->GetSize());
-        grey_two_ready = true;
         last_frame_timestamp = s->Timestamp;
+        grey_two_ready = true;
         s->FreeData();
     }
     else if(s->FrameSensor == IMU_sensor && (input_mode == orbslam_input_mode::stereoimu || input_mode == orbslam_input_mode::monoimu)) {
@@ -559,6 +592,7 @@ bool sb_update_frame (SLAMBenchLibraryHelper *slam_settings , slambench::io::SLA
                                                   frame_data[0],frame_data[1],frame_data[2],
                                                   s->Timestamp.ToS()));
         imu_ready = true;
+        is_cam_frame = false;
         s->FreeData();
     }
 
@@ -572,7 +606,7 @@ bool sb_update_frame (SLAMBenchLibraryHelper *slam_settings , slambench::io::SLA
 
     if(sensors_ready)
     {
-        if(!sb_get_initialized())
+        if(!sb_get_initialized() || frame_no <= start_frame)
         {
             performTracking();
             return false;
@@ -587,31 +621,55 @@ bool sb_process_once (SLAMBenchLibraryHelper *slam_settings)  {
         return false;
 
     SLAM->mpFrameDrawer->setState(SLAM->mpTracker->mLastProcessedState);
-    if(!sb_get_tracked())
-        SLAM->Relocalize();
+//    if(!sb_get_tracked())
+//        SLAM->Relocalize();
     return true;
 }
 
 // Report last valid pose if tracking is lost
 Eigen::Matrix4f last_valid_pose;
+//
+//void getAllPoses(std::vector<Eigen::Matrix4f> &sb_poses) {
+//    auto cv_poses = SLAM->getAllPoses();
+//    sb_poses.resize(cv_poses.size() - 2);
+//    for(size_t i = 0; i < sb_poses.size(); i++) //wtf
+//        copyPose<float>(sb_poses[i], cv_poses[i], copyFrom::CV_TO_SB);
+//}
+
 bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *latest_output) {
     (void)lib;
-    auto ts = *latest_output;
+//    auto ts = *latest_output;
+    auto ts = last_frame_timestamp;
     if(pose_output->IsActive()) {
         // Get the current pose as an eigen matrix
         Eigen::Matrix4f matrix;
         if(sb_get_tracked())
         {
             pose=SLAM->mpTracker->getPose();
-            sb_get_pose(&matrix);
+            copyPose<float>(matrix, pose, copyFrom::CV_TO_SB);
             last_valid_pose = matrix;
         }
         else
         {
             matrix = last_valid_pose;
         }
-        std::lock_guard<FastLock> lock(lib->GetOutputManager().GetLock());
-        pose_output->AddPoint(ts, new slambench::values::PoseValue(matrix));
+//        if(frame_no % 100 == 0 && frame_no > 0) {
+//            Eigen::Matrix4f new_pose;
+//            getAllPoses(cancer_poses);
+//            pose_output->reset();
+//            auto cv_poses = SLAM->getAllPoses();
+//            std::lock_guard<FastLock> lock(lib->GetOutputManager().GetLock());
+//            for(auto pair : cv_poses) {
+//                copyPose<float>(new_pose, pair.second, copyFrom::CV_TO_SB);
+//                pose_output->AddPoint(slambench::TimeStamp::FromS(pair.first), new slambench::values::PoseValue(new_pose));
+//            }
+//
+//        }
+//        else
+//        {
+            std::lock_guard<FastLock> lock(lib->GetOutputManager().GetLock());
+            pose_output->AddPoint(ts, new slambench::values::PoseValue(matrix));
+//        }
     }
 
     if(pointcloud_output->IsActive()) {
@@ -648,6 +706,11 @@ bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *
 
 
 bool sb_clean_slam_system() {
+    auto time = std::time(nullptr);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&time), "%F_%T");
+//    SLAM->SaveTrajectoryTUM("evo/ORB_SLAM3_traj" + ss.str() + ".log");
+    SLAM->SaveTrajectoryTUM("evo/ORB_SLAM3_traj_test.log");
     delete SLAM;
 //    SLAM->Shutdown();
     return true;

@@ -3903,23 +3903,29 @@ cv::Mat Tracking::getPose() const {
     return(pose.clone());
 }
 
-void Tracking::ConfigureCamera(cv::Mat K, cv::Mat DistCoef, int fps, float DepthMapFactor, float bf, float thDepth ) {
+void Tracking::ConfigureCamera(cv::Mat K, cv::Mat K_r, cv::Mat DistCoef, int fps, float DepthMapFactor, float bf, float thDepth ) {
     mbf = bf;
     K.copyTo(mK);
     DistCoef.copyTo(mDistCoef);
     mMaxFrames = fps;
-    if(mSensor==System::STEREO || mSensor==System::IMU_STEREO || mSensor==System::RGBD)
-    {
-        mThDepth = bf*(float)thDepth/K.at<float>(0,0);
-    }
-    if(mSensor==System::RGBD)
-    {
-        mDepthMapFactor = DepthMapFactor;
-    }
     vector<float> vCamCalib{K.at<float>(0,0),K.at<float>(1,1),K.at<float>(0,2),K.at<float>(1,2)};
     mpCamera = new Pinhole(vCamCalib);
     mpAtlas->AddCamera(mpCamera);
-}
+
+    if(mSensor==System::STEREO || mSensor==System::IMU_STEREO)
+    {
+        mThDepth = bf*(float)thDepth/K.at<float>(0,0);
+
+//        vector<float> vCamCalib_r{K_r.at<float>(0,0), K_r.at<float>(1,1), K_r.at<float>(0,2), K_r.at<float>(1,2)};
+//        mpCamera2 = new Pinhole(vCamCalib_r);
+//        mpAtlas->AddCamera(mpCamera2);
+    }
+    if(mSensor==System::RGBD)
+    {
+        mThDepth = bf*(float)thDepth/K.at<float>(0,0);
+        mDepthMapFactor = DepthMapFactor;
+    }
+  }
 void Tracking::ConfigureAlgorithm(int maxFeatures, int pyramidLevels, float levelScale, int firstFASTThresh, int secondFASTThresh ) {
 
     if(mpORBextractorLeft)
