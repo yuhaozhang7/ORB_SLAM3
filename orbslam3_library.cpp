@@ -412,9 +412,32 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         cv::Mat T_BS_r(4,4, CV_64F);
         Eigen::Matrix4d gray_pose_one = grey_sensor_one->Pose.cast<double>();
         Eigen::Matrix4d gray_pose_two = grey_sensor_two->Pose.cast<double>();
+
         copyPose<double>(gray_pose_one, T_BS_l, copyFrom::SB_TO_CV);
         copyPose<double>(gray_pose_two, T_BS_r, copyFrom::SB_TO_CV);
 
+        cv::Mat imu_T(4,4, CV_64F);
+        if(IMU_sensor)
+        {
+            Eigen::Matrix4d IMU_pose = IMU_sensor->Pose.cast<double>();
+            copyPose<double>(IMU_pose, imu_T, copyFrom::SB_TO_CV);
+            std::cout << IMU_pose * gray_pose_two.inverse() * gray_pose_one << std::endl;
+            std::cout << IMU_pose.inverse() * gray_pose_two * gray_pose_one << std::endl;
+            std::cout << IMU_pose.inverse() * gray_pose_two.inverse() * gray_pose_one << std::endl;
+            std::cout << IMU_sensor->Pose.cast<double>();// * gray_pose_two.inverse() * gray_pose_one << std::endl;
+            std::cout << IMU_pose.inverse() * gray_pose_two * gray_pose_one.inverse() << std::endl;
+            std::cout << gray_pose_two.inverse() * IMU_pose * gray_pose_one << std::endl;
+            std::cout << gray_pose_two.inverse() * IMU_pose * gray_pose_one << std::endl; // wrong
+            std::cout << gray_pose_two.inverse() * IMU_pose.inverse() * gray_pose_one << std::endl;// fucked
+            std::cout << gray_pose_two * IMU_pose.inverse() * gray_pose_one << std::endl; // fucked
+            std::cout << gray_pose_one * IMU_pose.inverse() * gray_pose_two << std::endl; // fucked
+            std::cout << gray_pose_one * IMU_pose * gray_pose_two.inverse() << std::endl;//  wrong
+        }
+        else
+        {
+            imu_T = cv::Mat::eye(4,4,CV_64F);
+        }
+        exit(-1);
         cv::Mat P_l, P_r, R_l, R_r;
         cv::Mat R1,R2,P1,P2,Q;
         cv::Mat Tr(4,4, CV_64F);
