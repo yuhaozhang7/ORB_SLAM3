@@ -416,37 +416,16 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         copyPose<double>(gray_pose_one, T_BS_l, copyFrom::SB_TO_CV);
         copyPose<double>(gray_pose_two, T_BS_r, copyFrom::SB_TO_CV);
 
-        cv::Mat imu_T(4,4, CV_64F);
-        if(IMU_sensor)
-        {
-            Eigen::Matrix4d IMU_pose = IMU_sensor->Pose.cast<double>();
-            copyPose<double>(IMU_pose, imu_T, copyFrom::SB_TO_CV);
-            std::cout << IMU_pose * gray_pose_two.inverse() * gray_pose_one << std::endl;
-            std::cout << IMU_pose.inverse() * gray_pose_two * gray_pose_one << std::endl;
-            std::cout << IMU_pose.inverse() * gray_pose_two.inverse() * gray_pose_one << std::endl;
-            std::cout << IMU_sensor->Pose.cast<double>();// * gray_pose_two.inverse() * gray_pose_one << std::endl;
-            std::cout << IMU_pose.inverse() * gray_pose_two * gray_pose_one.inverse() << std::endl;
-            std::cout << gray_pose_two.inverse() * IMU_pose * gray_pose_one << std::endl;
-            std::cout << gray_pose_two.inverse() * IMU_pose * gray_pose_one << std::endl; // wrong
-            std::cout << gray_pose_two.inverse() * IMU_pose.inverse() * gray_pose_one << std::endl;// fucked
-            std::cout << gray_pose_two * IMU_pose.inverse() * gray_pose_one << std::endl; // fucked
-            std::cout << gray_pose_one * IMU_pose.inverse() * gray_pose_two << std::endl; // fucked
-            std::cout << gray_pose_one * IMU_pose * gray_pose_two.inverse() << std::endl;//  wrong
-        }
-        else
-        {
-            imu_T = cv::Mat::eye(4,4,CV_64F);
-        }
-        exit(-1);
+//        cv::Mat imu_T(4,4, CV_64F);
         cv::Mat P_l, P_r, R_l, R_r;
         cv::Mat R1,R2,P1,P2,Q;
         cv::Mat Tr(4,4, CV_64F);
         Tr = T_BS_r.inv() * T_BS_l;
         Eigen::Matrix4d camtransform;
         camtransform << 0.9998053017199788, 0.011197738450911484, 0.01624713224548414, -0.07961594300469246,
-                       -0.011147758116324, 0.9999328574031386, -0.0031635699090552883, 0.0007443452072558462,
-                        -0.016281466199246444, 0.00298183486707869, 0.9998630018753686, 0.0004425529195268342,
-                        0.0, 0.0, 0.0, 1.0;
+            -0.011147758116324, 0.9999328574031386, -0.0031635699090552883, 0.0007443452072558462,
+            -0.016281466199246444, 0.00298183486707869, 0.9998630018753686, 0.0004425529195268342,
+            0.0, 0.0, 0.0, 1.0;
         copyPose<double>(camtransform, Tr, copyFrom::SB_TO_CV);
         cv::Mat R, T;
 
@@ -495,8 +474,15 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
             SLAM->mpTracker->ConfigureAlgorithm(max_features,pyramid_levels,scale_factor,initial_fast_threshold,second_fast_threshold);
             if(input_mode == orbslam_input_mode::stereoimu)
             {
-                cv::Mat Tbc = cv::Mat::zeros(4,4,CV_32F);
-                copyPose<float>(grey_sensor_one->Pose, Tbc);
+                cv::Mat Tbc(4,4, CV_32F);
+
+                Eigen::Matrix4f imu_pose = IMU_sensor->Pose; //Eigen::Matrix4f::Identity();
+//                imu_pose << -0.028228787368606456, -0.999601488301944, 1.2175294828553618e-05, 0.02172388268966517,
+//                    0.014401251861751119, -0.00041887083271471837, -0.9998962088597202, -6.605455433829172e-05,
+//                    0.999497743623523, -0.028225682131089447, 0.014407337010089172, -0.00048817563004522853,
+//                    0.0, 0.0, 0.0, 1.0;
+//                cv::Mat Tbc = cv::Mat::zeros(4,4,CV_32F);
+                copyPose<float>(imu_pose, Tbc, copyFrom::SB_TO_CV);
 
                 SLAM->mpTracker->ConfigureIMU(Tbc,
                                               IMU_sensor->Rate,
@@ -555,17 +541,17 @@ bool depth_ready = false, rgb_ready = false, grey_one_ready = false, grey_two_re
 bool performTracking()
 {
     if (input_mode == orbslam_input_mode::rgbd) {
-        SLAM->TrackRGBD(*imRGB,*imD,last_frame_timestamp.ToS());
+        pose = SLAM->TrackRGBD(*imRGB,*imD,last_frame_timestamp.ToS());
     } else if (input_mode == orbslam_input_mode::mono || input_mode == orbslam_input_mode::monoimu) {
         if (rgb_ready)
-            SLAM->TrackMonocular(*imRGB,last_frame_timestamp.ToS(), imupoints);
+            pose = SLAM->TrackMonocular(*imRGB,last_frame_timestamp.ToS(), imupoints);
         else if (grey_one_ready)
-            SLAM->TrackMonocular(*img_one,last_frame_timestamp.ToS(), imupoints);
+            pose = SLAM->TrackMonocular(*img_one,last_frame_timestamp.ToS(), imupoints);
     } else if(input_mode == orbslam_input_mode::stereo || input_mode == orbslam_input_mode::stereoimu) {
         cv::Mat imLeftRect, imRightRect;
         cv::remap(*img_one,imLeftRect,M1l,M2l,cv::INTER_LINEAR);
         cv::remap(*img_two,imRightRect,M1r,M2r,cv::INTER_LINEAR);
-        SLAM->TrackStereo(imLeftRect,imRightRect,last_frame_timestamp.ToS(), imupoints);
+        pose = SLAM->TrackStereo(imLeftRect,imRightRect,last_frame_timestamp.ToS(), imupoints);
     } else {
         std::cout << "Unsupported case." << std::endl;
         return false;
@@ -651,48 +637,69 @@ bool sb_process_once (SLAMBenchLibraryHelper *slam_settings)  {
 
 // Report last valid pose if tracking is lost
 Eigen::Matrix4f last_valid_pose;
-//
-//void getAllPoses(std::vector<Eigen::Matrix4f> &sb_poses) {
-//    auto cv_poses = SLAM->getAllPoses();
-//    sb_poses.resize(cv_poses.size() - 2);
-//    for(size_t i = 0; i < sb_poses.size(); i++) //wtf
-//        copyPose<float>(sb_poses[i], cv_poses[i], copyFrom::CV_TO_SB);
-//}
+
+void getAllPoses(std::vector<Eigen::Matrix4f> &sb_poses) {
+    auto cv_poses = SLAM->getAllPoses();
+    sb_poses.resize(cv_poses.size() - 2);
+    for(size_t i = 0; i < sb_poses.size(); i++) //wtf
+        copyPose<float>(sb_poses[i], reinterpret_cast<cv::Mat &>(cv_poses[i]), copyFrom::CV_TO_SB);
+}
+
+inline Eigen::Matrix<float, 4, 1> rot_2_quat(const Eigen::Matrix<float, 3, 3> &rot) {
+    Eigen::Matrix<float, 4, 1> q;
+    double T = rot.trace();
+    if ((rot(0, 0) >= T) && (rot(0, 0) >= rot(1, 1)) && (rot(0, 0) >= rot(2, 2))) {
+        //cout << "case 1- " << endl;
+        q(0) = sqrt((1 + (2 * rot(0, 0)) - T) / 4);
+        q(1) = (1 / (4 * q(0))) * (rot(0, 1) + rot(1, 0));
+        q(2) = (1 / (4 * q(0))) * (rot(0, 2) + rot(2, 0));
+        q(3) = (1 / (4 * q(0))) * (rot(1, 2) - rot(2, 1));
+
+    } else if ((rot(1, 1) >= T) && (rot(1, 1) >= rot(0, 0)) && (rot(1, 1) >= rot(2, 2))) {
+        //cout << "case 2- " << endl;
+        q(1) = sqrt((1 + (2 * rot(1, 1)) - T) / 4);
+        q(0) = (1 / (4 * q(1))) * (rot(0, 1) + rot(1, 0));
+        q(2) = (1 / (4 * q(1))) * (rot(1, 2) + rot(2, 1));
+        q(3) = (1 / (4 * q(1))) * (rot(2, 0) - rot(0, 2));
+    } else if ((rot(2, 2) >= T) && (rot(2, 2) >= rot(0, 0)) && (rot(2, 2) >= rot(1, 1))) {
+        //cout << "case 3- " << endl;
+        q(2) = sqrt((1 + (2 * rot(2, 2)) - T) / 4);
+        q(0) = (1 / (4 * q(2))) * (rot(0, 2) + rot(2, 0));
+        q(1) = (1 / (4 * q(2))) * (rot(1, 2) + rot(2, 1));
+        q(3) = (1 / (4 * q(2))) * (rot(0, 1) - rot(1, 0));
+    } else {
+        //cout << "case 4- " << endl;
+        q(3) = sqrt((1 + T) / 4);
+        q(0) = (1 / (4 * q(3))) * (rot(1, 2) - rot(2, 1));
+        q(1) = (1 / (4 * q(3))) * (rot(2, 0) - rot(0, 2));
+        q(2) = (1 / (4 * q(3))) * (rot(0, 1) - rot(1, 0));
+    }
+    if (q(3) < 0) {
+        q = -q;
+    }
+    // normalize and return
+    q = q / (q.norm());
+    return q;
+}
+
+
 
 bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *latest_output) {
     (void)lib;
 //    auto ts = *latest_output;
     auto ts = last_frame_timestamp;
+
     if(pose_output->IsActive()) {
         // Get the current pose as an eigen matrix
         Eigen::Matrix4f matrix;
-        if(sb_get_tracked())
-        {
-            pose=SLAM->mpTracker->getPose();
-            copyPose<float>(matrix, pose, copyFrom::CV_TO_SB);
-            last_valid_pose = matrix;
+        std::lock_guard<FastLock> lock(lib->GetOutputManager().GetLock());
+        pose_output->reset();
+        auto cv_poses = SLAM->getAllPoses();
+        for (auto pair : cv_poses) {
+            copyPose<float>(matrix, pair.second, copyFrom::CV_TO_SB);
+            pose_output->AddPoint(slambench::TimeStamp::FromNs(pair.first * 1000000000.0),
+                                  new slambench::values::PoseValue(matrix));
         }
-        else
-        {
-            matrix = last_valid_pose;
-        }
-//        if(frame_no % 100 == 0 && frame_no > 0) {
-//            Eigen::Matrix4f new_pose;
-//            getAllPoses(cancer_poses);
-//            pose_output->reset();
-//            auto cv_poses = SLAM->getAllPoses();
-//            std::lock_guard<FastLock> lock(lib->GetOutputManager().GetLock());
-//            for(auto pair : cv_poses) {
-//                copyPose<float>(new_pose, pair.second, copyFrom::CV_TO_SB);
-//                pose_output->AddPoint(slambench::TimeStamp::FromS(pair.first), new slambench::values::PoseValue(new_pose));
-//            }
-//
-//        }
-//        else
-//        {
-            std::lock_guard<FastLock> lock(lib->GetOutputManager().GetLock());
-            pose_output->AddPoint(ts, new slambench::values::PoseValue(matrix));
-//        }
     }
 
     if(pointcloud_output->IsActive()) {
@@ -734,6 +741,7 @@ bool sb_clean_slam_system() {
     ss << std::put_time(std::localtime(&time), "%F_%T");
 //    SLAM->SaveTrajectoryTUM("evo/ORB_SLAM3_traj" + ss.str() + ".log");
     SLAM->SaveTrajectoryTUM("evo/ORB_SLAM3_traj_test.log");
+    SLAM->SaveKeyFrameTrajectoryTUM("evo/keyframes.log");
     delete SLAM;
 //    SLAM->Shutdown();
     return true;

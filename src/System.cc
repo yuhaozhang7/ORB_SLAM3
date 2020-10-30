@@ -562,18 +562,37 @@ vector<std::pair<double, cv::Mat>> System::getAllPoses()
             //cout << "--Parent KF: " << pKF->mnId << endl;
         }
 
-        if(!pKF || pKF->GetMap() != pBiggerMap)
-            continue;
+//        if(!pKF || pKF->GetMap() != pBiggerMap)
+//        if(!pKF)
+//            continue;
 
-        Trw = Trw*pKF->GetPose()*Twb; // Tcp*Tpw*Twb0=Tcb0 where b0 is the new world reference
+            Trw = Trw*pKF->GetPose()*Twb; // Tcp*Tpw*Twb0=Tcb0 where b0 is the new world reference
 
             cv::Mat Tcw = (*lit)*Trw;
             cv::Mat Rwc = Tcw.rowRange(0,3).colRange(0,3).t();
             cv::Mat twc = -Rwc*Tcw.rowRange(0,3).col(3);
-            vector<float> q = Converter::toQuaternion(Rwc);
-            Tcw.rowRange(0,3).colRange(0,3) = Rwc;
-            Tcw.rowRange(0,3).col(3) = twc;
-            poses.push_back(std::make_pair(*lT, Tcw));
+            cv::Mat M(4,4, CV_32F);
+            M.at<float>(0,0) = Rwc.at<float>(0,0);
+            M.at<float>(1,0) = Rwc.at<float>(1,0);
+            M.at<float>(2,0) = Rwc.at<float>(2,0);
+            M.at<float>(3,0)  = 0.0;
+
+            M.at<float>(0,1) = Rwc.at<float>(0,1);
+            M.at<float>(1,1) = Rwc.at<float>(1,1);
+            M.at<float>(2,1) = Rwc.at<float>(2,1);
+            M.at<float>(3,1)  = 0.0;
+
+            M.at<float>(0,2) = Rwc.at<float>(0,2);
+            M.at<float>(1,2) = Rwc.at<float>(1,2);
+            M.at<float>(2,2) = Rwc.at<float>(2,2);
+            M.at<float>(3,2)  = 0.0;
+
+            M.at<float>(0,3) = twc.at<float>(0);
+            M.at<float>(1,3) = twc.at<float>(1);
+            M.at<float>(2,3) = twc.at<float>(2);
+            M.at<float>(3,3)  = 1.0;
+
+            poses.push_back(std::make_pair(*lT, M));
 
     }
     return poses;
@@ -626,8 +645,9 @@ vector<std::pair<double, cv::Mat>> System::getAllPoses()
             }
 
             Trw = Trw*pKF->GetPose()*Two;
+            Trw = pKF->GetPose();
 
-            cv::Mat Tcw = (*lit)*Trw;
+            cv::Mat Tcw = (*lit);//*Trw;
             cv::Mat Rwc = Tcw.rowRange(0,3).colRange(0,3).t();
             cv::Mat twc = -Rwc*Tcw.rowRange(0,3).col(3);
 
@@ -776,7 +796,8 @@ void System::SaveTrajectoryEuRoC(const string &filename)
             cv::Mat Rwb = Tbw.rowRange(0,3).colRange(0,3).t();
             cv::Mat twb = -Rwb*Tbw.rowRange(0,3).col(3);
             vector<float> q = Converter::toQuaternion(Rwb);
-            f << setprecision(6) << 1e9*(*lT) << " " <<  setprecision(9) << twb.at<float>(0) << " " << twb.at<float>(1) << " " << twb.at<float>(2) << " " << q[0] << " " << q[1] << " " << q[2] << " " << q[3] << endl;
+//            f << setprecision(6) << 1e9*(*lT) << " " <<  setprecision(9) << twb.at<float>(0) << " " << twb.at<float>(1) << " " << twb.at<float>(2) << " " << q[0] << " " << q[1] << " " << q[2] << " " << q[3] << endl;
+            f << setprecision(6) << *lT << " " <<  setprecision(9) << twb.at<float>(0) << " " << twb.at<float>(1) << " " << twb.at<float>(2) << " " << q[0] << " " << q[1] << " " << q[2] << " " << q[3] << endl;
         }
         else
         {
@@ -784,7 +805,8 @@ void System::SaveTrajectoryEuRoC(const string &filename)
             cv::Mat Rwc = Tcw.rowRange(0,3).colRange(0,3).t();
             cv::Mat twc = -Rwc*Tcw.rowRange(0,3).col(3);
             vector<float> q = Converter::toQuaternion(Rwc);
-            f << setprecision(6) << 1e9*(*lT) << " " <<  setprecision(9) << twc.at<float>(0) << " " << twc.at<float>(1) << " " << twc.at<float>(2) << " " << q[0] << " " << q[1] << " " << q[2] << " " << q[3] << endl;
+//            f << setprecision(6) << 1e9*(*lT) << " " <<  setprecision(9) << twc.at<float>(0) << " " << twc.at<float>(1) << " " << twc.at<float>(2) << " " << q[0] << " " << q[1] << " " << q[2] << " " << q[3] << endl;
+            f << setprecision(6) << *lT << " " <<  setprecision(9) << twc.at<float>(0) << " " << twc.at<float>(1) << " " << twc.at<float>(2) << " " << q[0] << " " << q[1] << " " << q[2] << " " << q[3] << endl;
         }
 
         // cout << "5" << endl;
