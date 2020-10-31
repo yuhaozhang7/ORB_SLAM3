@@ -581,6 +581,8 @@ bool sb_update_frame (SLAMBenchLibraryHelper *slam_settings , slambench::io::SLA
         memcpy(imRGB->data, s->GetData(), s->GetSize());
         last_frame_timestamp = s->Timestamp;
         rgb_ready = true;
+        cv::imshow("caca", *imRGB);
+        cv::waitKey(1);
         s->FreeData();
     } else if(s->FrameSensor == grey_sensor_one and img_one) {
         memcpy(img_one->data, s->GetData(), s->GetSize());
@@ -749,5 +751,7 @@ bool sb_clean_slam_system() {
 
 bool sb_relocalize(SLAMBenchLibraryHelper *lib)
 {
-    return SLAM->Relocalize();
+    SLAM->ChangeDataset();
+//    return SLAM->Relocalize();
+    return false;
 }
