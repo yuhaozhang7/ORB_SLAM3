@@ -416,17 +416,9 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         copyPose<double>(gray_pose_one, T_BS_l, copyFrom::SB_TO_CV);
         copyPose<double>(gray_pose_two, T_BS_r, copyFrom::SB_TO_CV);
 
-//        cv::Mat imu_T(4,4, CV_64F);
         cv::Mat P_l, P_r, R_l, R_r;
         cv::Mat R1,R2,P1,P2,Q;
-        cv::Mat Tr(4,4, CV_64F);
-        Tr = T_BS_r.inv() * T_BS_l;
-        Eigen::Matrix4d camtransform;
-        camtransform << 0.9998053017199788, 0.011197738450911484, 0.01624713224548414, -0.07961594300469246,
-            -0.011147758116324, 0.9999328574031386, -0.0031635699090552883, 0.0007443452072558462,
-            -0.016281466199246444, 0.00298183486707869, 0.9998630018753686, 0.0004425529195268342,
-            0.0, 0.0, 0.0, 1.0;
-        copyPose<double>(camtransform, Tr, copyFrom::SB_TO_CV);
+        cv::Mat Tr = (T_BS_r).inv() * (T_BS_l);
         cv::Mat R, T;
 
         Tr.colRange(0,3).rowRange(0,3).copyTo(R);
@@ -476,12 +468,7 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
             {
                 cv::Mat Tbc(4,4, CV_32F);
 
-                Eigen::Matrix4f imu_pose = IMU_sensor->Pose; //Eigen::Matrix4f::Identity();
-//                imu_pose << -0.028228787368606456, -0.999601488301944, 1.2175294828553618e-05, 0.02172388268966517,
-//                    0.014401251861751119, -0.00041887083271471837, -0.9998962088597202, -6.605455433829172e-05,
-//                    0.999497743623523, -0.028225682131089447, 0.014407337010089172, -0.00048817563004522853,
-//                    0.0, 0.0, 0.0, 1.0;
-//                cv::Mat Tbc = cv::Mat::zeros(4,4,CV_32F);
+                Eigen::Matrix4f imu_pose = IMU_sensor->Pose;
                 copyPose<float>(imu_pose, Tbc, copyFrom::SB_TO_CV);
 
                 SLAM->mpTracker->ConfigureIMU(Tbc,
@@ -542,6 +529,7 @@ bool performTracking()
 {
     if (input_mode == orbslam_input_mode::rgbd) {
         pose = SLAM->TrackRGBD(*imRGB,*imD,last_frame_timestamp.ToS());
+        std::cout<<"Pose in SLAMBench:"<<pose<<std::endl;
     } else if (input_mode == orbslam_input_mode::mono || input_mode == orbslam_input_mode::monoimu) {
         if (rgb_ready)
             pose = SLAM->TrackMonocular(*imRGB,last_frame_timestamp.ToS(), imupoints);
@@ -582,8 +570,6 @@ bool sb_update_frame (SLAMBenchLibraryHelper *slam_settings , slambench::io::SLA
         memcpy(imRGB->data, s->GetData(), s->GetSize());
         last_frame_timestamp = s->Timestamp;
         rgb_ready = true;
-        cv::imshow("caca", *imRGB);
-        cv::waitKey(1);
         s->FreeData();
     } else if(s->FrameSensor == grey_sensor_one and img_one) {
         memcpy(img_one->data, s->GetData(), s->GetSize());
@@ -607,7 +593,6 @@ bool sb_update_frame (SLAMBenchLibraryHelper *slam_settings , slambench::io::SLA
         is_cam_frame = false;
         s->FreeData();
     }
-
     bool sensors_ready = (input_mode == orbslam_input_mode::rgbd and depth_ready and rgb_ready) or
                          (input_mode == orbslam_input_mode::mono and rgb_ready) or
                          (input_mode == orbslam_input_mode::mono and grey_one_ready) or
@@ -616,30 +601,31 @@ bool sb_update_frame (SLAMBenchLibraryHelper *slam_settings , slambench::io::SLA
                          (input_mode == orbslam_input_mode::stereo and grey_one_ready and grey_two_ready) or
                          (input_mode == orbslam_input_mode::stereoimu and grey_one_ready and grey_two_ready and imu_ready);
 
-    if(sensors_ready)
+//  Continue sending in frames if not yet initialized or start frame not reached yet
+    if((sensors_ready && !sb_get_initialized()) || frame_no < start_frame)
     {
-        if(!sb_get_initialized() || frame_no <= start_frame)
-        {
-            performTracking();
-            return false;
-        } else {
-            return true;
-        }
+        cout<<"Perform tracking from sb_update_frame"<<std::endl;
+        performTracking();
+        return false;
     }
+
+    return sensors_ready;
 }
 
 bool sb_process_once (SLAMBenchLibraryHelper *slam_settings)  {
+    cout<<"Perform tracking from sb_process_once"<<std::endl;
     if(!performTracking())
         return false;
 
     SLAM->mpFrameDrawer->setState(SLAM->mpTracker->mLastProcessedState);
-//    if(!sb_get_tracked())
+    if(!sb_get_tracked())
+        std::cerr<<"Tracking failed!"<<std::endl;
 //        SLAM->Relocalize();
     return true;
 }
 
 // Report last valid pose if tracking is lost
-Eigen::Matrix4f last_valid_pose;
+Eigen::Matrix4f last_valid_pose=Eigen::Matrix4f::Identity();
 
 void getAllPoses(std::vector<Eigen::Matrix4f> &sb_poses) {
     auto cv_poses = SLAM->getAllPoses();
@@ -648,22 +634,34 @@ void getAllPoses(std::vector<Eigen::Matrix4f> &sb_poses) {
         copyPose<float>(sb_poses[i], reinterpret_cast<cv::Mat &>(cv_poses[i]), copyFrom::CV_TO_SB);
 }
 
+bool sb_get_pose (Eigen::Matrix4f* mat)  {
+    for(int j=0; j<4;j++) {
+        for(int i=0; i<4;i++) {
+            (*mat)(j,i)= pose.at<float>(j,i);
+        }
+    }
+    return true;
+}
+
 bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *latest_output) {
     (void)lib;
-//    auto ts = *latest_output;
-    auto ts = last_frame_timestamp;
+    auto ts = *latest_output;
 
     if(pose_output->IsActive()) {
         // Get the current pose as an eigen matrix
         Eigen::Matrix4f matrix;
-        std::lock_guard<FastLock> lock(lib->GetOutputManager().GetLock());
-        pose_output->reset();
-        auto cv_poses = SLAM->getAllPoses();
-        for (auto pair : cv_poses) {
-            copyPose<float>(matrix, pair.second, copyFrom::CV_TO_SB);
-            pose_output->AddPoint(slambench::TimeStamp::FromNs(pair.first * 1000000000.0),
-                                  new slambench::values::PoseValue(matrix));
+        if(sb_get_tracked())
+        {
+            pose=SLAM->mpTracker->getPose();
+            sb_get_pose(&matrix);
+            last_valid_pose = matrix;
         }
+        else
+        {
+            matrix = last_valid_pose;
+        }
+        std::lock_guard<FastLock> lock(lib->GetOutputManager().GetLock());
+        pose_output->AddPoint(ts, new slambench::values::PoseValue(matrix));
     }
 
     if(pointcloud_output->IsActive()) {
@@ -700,14 +698,8 @@ bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *
 
 
 bool sb_clean_slam_system() {
-    auto time = std::time(nullptr);
-    std::stringstream ss;
-    ss << std::put_time(std::localtime(&time), "%F_%T");
-//    SLAM->SaveTrajectoryTUM("evo/ORB_SLAM3_traj" + ss.str() + ".log");
-    SLAM->SaveTrajectoryTUM("evo/ORB_SLAM3_traj_test.log");
-    SLAM->SaveKeyFrameTrajectoryTUM("evo/keyframes.log");
     delete SLAM;
-//    SLAM->Shutdown();
+//    SLAM->Shutdown(); FIXME: this hangs
     return true;
 }
 
