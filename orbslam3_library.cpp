@@ -648,45 +648,6 @@ void getAllPoses(std::vector<Eigen::Matrix4f> &sb_poses) {
         copyPose<float>(sb_poses[i], reinterpret_cast<cv::Mat &>(cv_poses[i]), copyFrom::CV_TO_SB);
 }
 
-inline Eigen::Matrix<float, 4, 1> rot_2_quat(const Eigen::Matrix<float, 3, 3> &rot) {
-    Eigen::Matrix<float, 4, 1> q;
-    double T = rot.trace();
-    if ((rot(0, 0) >= T) && (rot(0, 0) >= rot(1, 1)) && (rot(0, 0) >= rot(2, 2))) {
-        //cout << "case 1- " << endl;
-        q(0) = sqrt((1 + (2 * rot(0, 0)) - T) / 4);
-        q(1) = (1 / (4 * q(0))) * (rot(0, 1) + rot(1, 0));
-        q(2) = (1 / (4 * q(0))) * (rot(0, 2) + rot(2, 0));
-        q(3) = (1 / (4 * q(0))) * (rot(1, 2) - rot(2, 1));
-
-    } else if ((rot(1, 1) >= T) && (rot(1, 1) >= rot(0, 0)) && (rot(1, 1) >= rot(2, 2))) {
-        //cout << "case 2- " << endl;
-        q(1) = sqrt((1 + (2 * rot(1, 1)) - T) / 4);
-        q(0) = (1 / (4 * q(1))) * (rot(0, 1) + rot(1, 0));
-        q(2) = (1 / (4 * q(1))) * (rot(1, 2) + rot(2, 1));
-        q(3) = (1 / (4 * q(1))) * (rot(2, 0) - rot(0, 2));
-    } else if ((rot(2, 2) >= T) && (rot(2, 2) >= rot(0, 0)) && (rot(2, 2) >= rot(1, 1))) {
-        //cout << "case 3- " << endl;
-        q(2) = sqrt((1 + (2 * rot(2, 2)) - T) / 4);
-        q(0) = (1 / (4 * q(2))) * (rot(0, 2) + rot(2, 0));
-        q(1) = (1 / (4 * q(2))) * (rot(1, 2) + rot(2, 1));
-        q(3) = (1 / (4 * q(2))) * (rot(0, 1) - rot(1, 0));
-    } else {
-        //cout << "case 4- " << endl;
-        q(3) = sqrt((1 + T) / 4);
-        q(0) = (1 / (4 * q(3))) * (rot(1, 2) - rot(2, 1));
-        q(1) = (1 / (4 * q(3))) * (rot(2, 0) - rot(0, 2));
-        q(2) = (1 / (4 * q(3))) * (rot(0, 1) - rot(1, 0));
-    }
-    if (q(3) < 0) {
-        q = -q;
-    }
-    // normalize and return
-    q = q / (q.norm());
-    return q;
-}
-
-
-
 bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *latest_output) {
     (void)lib;
 //    auto ts = *latest_output;
