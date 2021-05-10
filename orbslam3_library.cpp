@@ -16,22 +16,18 @@
 #include <io/sensor/DepthSensor.h>
 #include <io/sensor/GroundTruthSensor.h>
 #include <io/sensor/IMUSensor.h>
-#include <stdint.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <time.h>
-#include <timings.h>
 #include <chrono>
-#include <Eigen/Dense>
-#include <Eigen/Geometry>
-#include <csignal>
+#include <Eigen/Eigen>
 #include <cstring>
-#include <iomanip>
-#include <opencv2/core/core.hpp>
 #include <sstream>
 #include <string>
 #include <vector>
-
+#if (CV_MAJOR_VERSION > 3)
+#include <opencv4/opencv2/core.hpp>
+#include <opencv4/opencv2/calib3d/calib3d_c.h>
+#else
+#include <opencv2/core/core.hpp>
+#endif
 // access to slam objects
 static cv::Mat pose;
 static cv::Mat frameCV;
