@@ -172,3 +172,7 @@ g2o/stuff/string_tools.cpp
 g2o/stuff/property.cpp       
 g2o/stuff/property.h       
 )
+
+install(TARGETS g2o  DESTINATION  g2o/)
+
+

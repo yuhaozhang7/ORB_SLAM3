@@ -122,8 +122,8 @@ src/TwoViewReconstruction.cc)
 target_link_libraries(${PROJECT_NAME}
 ${OpenCV_LIBS}
 ${Pangolin_LIBRARIES}
-${CMAKE_CURRENT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
-${CMAKE_CURRENT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
+DBoW2
+g2o
 -lboost_serialization
 -lcrypto
 )
@@ -200,6 +200,9 @@ add_library(${PROJECT_NAME}-original SHARED
 target_link_libraries(${PROJECT_NAME}-original
         ${PROJECT_NAME}
         )
+
+install(TARGETS ${PROJECT_NAME}  DESTINATION  lib/)
+install(TARGETS ${PROJECT_NAME}-original  DESTINATION  lib/)
 
 # Build examples
 
