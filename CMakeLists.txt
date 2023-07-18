@@ -207,5 +207,13 @@ install(TARGETS ${PROJECT_NAME}-original  DESTINATION  lib/)
 # Build examples
 
 # generate_slam_library(${PROJECT_NAME}-original "")
+SET(LIBNAME orbslam3-original-library)
+SET(SLAMBENCH_C_WRAPPER	-Wl,--whole-archive -L${WRAPPER_PATH} slambench-c-wrapper	-Wl,--no-whole-archive)
+SET(NULL_FILE_PATH	${WRAPPER_PATH}/null.cpp)
+
+add_library(${LIBNAME} SHARED ${NULL_FILE_PATH})
+target_link_libraries(${LIBNAME} PRIVATE ${SLAMBENCH_C_WRAPPER} ${PROJECT_NAME}-original)
+SET_TARGET_PROPERTIES(${LIBNAME} PROPERTIES LINK_FLAGS "${ARGN}")
+install(TARGETS ${LIBNAME}  DESTINATION  lib/)
 
 
