@@ -204,16 +204,20 @@ target_link_libraries(${PROJECT_NAME}-original
 install(TARGETS ${PROJECT_NAME}  DESTINATION  lib/)
 install(TARGETS ${PROJECT_NAME}-original  DESTINATION  lib/)
 
-# Build examples
 
-# generate_slam_library(${PROJECT_NAME}-original "")
-SET(LIBNAME orbslam3-original-library)
 SET(SLAMBENCH_C_WRAPPER	-Wl,--whole-archive -L${WRAPPER_PATH} slambench-c-wrapper	-Wl,--no-whole-archive)
 SET(NULL_FILE_PATH	${WRAPPER_PATH}/null.cpp)
 
-add_library(${LIBNAME} SHARED ${NULL_FILE_PATH})
-target_link_libraries(${LIBNAME} PRIVATE ${SLAMBENCH_C_WRAPPER} ${PROJECT_NAME}-original)
-SET_TARGET_PROPERTIES(${LIBNAME} PROPERTIES LINK_FLAGS "${ARGN}")
-install(TARGETS ${LIBNAME}  DESTINATION  lib/)
+function(generate_slam_library library_name )
+
+    add_library(${library_name}-library SHARED ${NULL_FILE_PATH})
+    target_link_libraries(${library_name}-library PRIVATE ${SLAMBENCH_C_WRAPPER} ${library_name})
+    SET_TARGET_PROPERTIES(${library_name}-library PROPERTIES LINK_FLAGS "${ARGN}")
+    SET_TARGET_PROPERTIES(${library_name}-library PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH "${LIB_PATH}")
+    install(TARGETS ${library_name}-library  DESTINATION  lib/)
+
+endfunction()
+
+generate_slam_library(${PROJECT_NAME}-original "-Wl,--disable-new-dtags")
 
 
