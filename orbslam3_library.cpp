@@ -428,6 +428,8 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         // note that order of cameras matter (left camera) should be the first one.
         if(grey_sensor_one->DistortionType == slambench::io::CameraSensor::RadialTangential)
             cv::stereoRectify(K_l, D_l, K_r, D_r, cv::Size(cols_l,rows_l), R, T, R_l, R_r, P_l, P_r, Q, CV_CALIB_ZERO_DISPARITY,0);
+        else if (grey_sensor_one->DistortionType == slambench::io::CameraSensor::NoDistortion)
+            cv::stereoRectify(K_l, D_l, K_r, D_r, cv::Size(cols_l,rows_l), R, T, R_l, R_r, P_l, P_r, Q, CV_CALIB_ZERO_DISPARITY,0);
         else
             cv::fisheye::stereoRectify(K_l, D_l, K_r, D_r, cv::Size(cols_l,rows_l), R, T, R_l, R_r, P_l, P_r, Q, CV_CALIB_ZERO_DISPARITY);
 
@@ -486,8 +488,10 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
         if(grey_sensor_one->DistortionType == slambench::io::CameraSensor::RadialTangential) {
             cv::initUndistortRectifyMap(K_l,D_l,R_l,P_l.rowRange(0,3).colRange(0,3),cv::Size(cols_l,rows_l),CV_32F,M1l,M2l);
             cv::initUndistortRectifyMap(K_r,D_r,R_r,P_r.rowRange(0,3).colRange(0,3),cv::Size(cols_r,rows_r),CV_32F,M1r,M2r);
-        }
-        else {
+        } else if (grey_sensor_one->DistortionType == slambench::io::CameraSensor::NoDistortion) {
+            cv::initUndistortRectifyMap(K_l,D_l,R_l,P_l.rowRange(0,3).colRange(0,3),cv::Size(cols_l,rows_l),CV_32F,M1l,M2l);
+            cv::initUndistortRectifyMap(K_r,D_r,R_r,P_r.rowRange(0,3).colRange(0,3),cv::Size(cols_r,rows_r),CV_32F,M1r,M2r);
+        } else {
             cv::fisheye::initUndistortRectifyMap(K_l,D_l,R_l,P_l.rowRange(0,3).colRange(0,3),cv::Size(cols_l,rows_l),CV_32F,M1l,M2l);
             cv::fisheye::initUndistortRectifyMap(K_r,D_r,R_r,P_r.rowRange(0,3).colRange(0,3),cv::Size(cols_r,rows_r),CV_32F,M1r,M2r);
         }
