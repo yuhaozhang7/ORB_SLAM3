@@ -49,8 +49,8 @@ static std::string settings_file;
 static std::string vocabulary_file;
 
 
-static slambench::outputs::Output *pose_output;
-static slambench::outputs::Output *pointcloud_output;
+static slambench::outputs::Output *orbslam3_pose_output;
+static slambench::outputs::Output *orbslam3_pointcloud_output;
 
 static slambench::outputs::Output *frame1_output;
 static slambench::outputs::Output *frame2_output;
@@ -505,12 +505,12 @@ bool sb_init_slam_system(SLAMBenchLibraryHelper * slam_settings)  {
     }
     SLAM->mpTracker->PrintConfig();
 
-    pose_output = new slambench::outputs::Output("Pose", slambench::values::VT_POSE, true);
-    slam_settings->GetOutputManager().RegisterOutput(pose_output);
+    orbslam3_pose_output = new slambench::outputs::Output("ORB-SLAM3 Pose", slambench::values::VT_POSE, true);
+    slam_settings->GetOutputManager().RegisterOutput(orbslam3_pose_output);
 
-    pointcloud_output = new slambench::outputs::Output("PointCloud", slambench::values::VT_POINTCLOUD, true);
-    pointcloud_output->SetKeepOnlyMostRecent(true);
-    slam_settings->GetOutputManager().RegisterOutput(pointcloud_output);
+    orbslam3_pointcloud_output = new slambench::outputs::Output("ORB-SLAM3 PointCloud", slambench::values::VT_POINTCLOUD, true);
+    orbslam3_pointcloud_output->SetKeepOnlyMostRecent(true);
+    slam_settings->GetOutputManager().RegisterOutput(orbslam3_pointcloud_output);
 
     frame1_output = new slambench::outputs::Output("Input Frame", slambench::values::VT_FRAME);
     frame1_output->SetKeepOnlyMostRecent(true);
@@ -613,7 +613,7 @@ bool sb_update_frame (SLAMBenchLibraryHelper *slam_settings , slambench::io::SLA
 }
 
 bool sb_process_once (SLAMBenchLibraryHelper *slam_settings)  {
-    cout<<"Perform tracking from sb_process_once"<<std::endl;
+    cout<<"Process Frame: " << frame_no + 1 << std::endl;
     if(!performTracking())
         return false;
 
@@ -647,7 +647,7 @@ bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *
     (void)lib;
     auto ts = *latest_output;
 
-    if(pose_output->IsActive()) {
+    if(orbslam3_pose_output->IsActive()) {
         // Get the current pose as an eigen matrix
         Eigen::Matrix4f matrix;
         if(sb_get_tracked())
@@ -661,12 +661,12 @@ bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *
             matrix = last_valid_pose;
         }
         std::lock_guard<FastLock> lock(lib->GetOutputManager().GetLock());
-        pose_output->AddPoint(ts, new slambench::values::PoseValue(matrix));
+        orbslam3_pose_output->AddPoint(ts, new slambench::values::PoseValue(matrix));
     }
 
-    if(pointcloud_output->IsActive()) {
+    if(orbslam3_pointcloud_output->IsActive()) {
         auto point_cloud = new slambench::values::PointCloudValue();
-        auto vpMPs = SLAM->mpMapDrawer->mpAtlas->GetReferenceMapPoints();
+        auto vpMPs = SLAM->mpMapDrawer->mpAtlas->GetAllMapPoints();
         for(auto & vpMP : vpMPs) {
             if(vpMP->isBad())
                 continue;
@@ -676,7 +676,7 @@ bool sb_update_outputs(SLAMBenchLibraryHelper *lib, const slambench::TimeStamp *
 
         // Take lock only after generating the map
         std::lock_guard<FastLock> lock (lib->GetOutputManager().GetLock());
-        pointcloud_output->AddPoint(ts, point_cloud);
+        orbslam3_pointcloud_output->AddPoint(ts, point_cloud);
     }
 
     if(frame1_output->IsActive()) {
